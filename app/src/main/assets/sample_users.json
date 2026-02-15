@@ -1,0 +1,66 @@
+[
+  {
+    "uid": "test_id1",
+    "name": "Aarav",
+    "major": "Computer Science",
+    "year": "Junior",
+    "bio": "Love coding and coffee. Looking for a study buddy for CS 310.",
+    "email": "aarav@test.edu"
+  },
+  {
+    "uid": "test_id2",
+    "name": "Maya",
+    "major": "Biology",
+    "year": "Sophomore",
+    "bio": "Pre-med. Currently struggling with Organic Chemistry. Help!",
+    "email": "maya@test.edu"
+  },
+  {
+    "uid": "test_id3",
+    "name": "Ethan",
+    "major": "Mathematics",
+    "year": "Senior",
+    "bio": "Math tutor. Happy to help with Calculus or Linear Algebra.",
+    "email": "ethan@test.edu"
+  },
+  {
+    "uid": "test_id4",
+    "name": "Zara",
+    "major": "Engineering",
+    "year": "Freshman",
+    "bio": "First year student. Interested in Robotics and building cool stuff.",
+    "email": "zara@test.edu"
+  },
+  {
+    "uid": "sample_5",
+    "name": "Chloe",
+    "major": "Art History",
+    "year": "Senior",
+    "bio": "Passionate about Renaissance art. Need someone to study for the final exam with!",
+    "email": "chloe@test.edu"
+  },
+  {
+    "uid": "sample_6",
+    "name": "Daniel",
+    "major": "Economics",
+    "year": "Junior",
+    "bio": "Struggling with econometrics. Let's study together and grab some snacks.",
+    "email": "daniel@test.edu"
+  },
+  {
+    "uid": "sample_7",
+    "name": "Sophia",
+    "major": "Chemistry",
+    "year": "Sophomore",
+    "bio": "Love lab work but hate theory. Let's help each other out!",
+    "email": "sophia@test.edu"
+  },
+  {
+    "uid": "sample_8",
+    "name": "Liam",
+    "major": "Political Science",
+    "year": "Senior",
+    "bio": "Loves debates and discussions. Looking for someone to review political theories with.",
+    "email": "liam@test.edu"
+  }
+]

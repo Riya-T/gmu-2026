@@ -1,5 +1,6 @@
 package com.example.studymate.ui.matches
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.studymate.data.model.User
@@ -11,7 +12,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class MatchesViewModel(
-    private val matchRepository: MatchRepository
+    private val matchRepository: MatchRepository,
+    private val context: Context
 ) : ViewModel() {
 
     private val auth = FirebaseAuth.getInstance()
@@ -29,7 +31,7 @@ class MatchesViewModel(
         val currentUid = auth.currentUser?.uid ?: return
         viewModelScope.launch {
             _isLoading.value = true
-            val result = matchRepository.getMatches(currentUid)
+            val result = matchRepository.getMatches(context, currentUid)
             _matches.value = result
             _isLoading.value = false
         }

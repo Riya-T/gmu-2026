@@ -2,10 +2,19 @@ package com.example.studymate.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Valentine's Aesthetic Palette
+val ValentineRed = Color(0xFFE63946)
+val ValentinePink = Color(0xFFFFB3C1)
+val ValentineSoftPink = Color(0xFFFFF0F3)
+val ValentineDeepRose = Color(0xFFC9184A)
+val ValentineWine = Color(0xFF590D22)
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+val PrimaryRose = Color(0xFFFB6F92)
+val SecondaryRose = Color(0xFFFF85A1)
+val AccentPeach = Color(0xFFFFC8DD)
+val TextDark = Color(0xFF4A4E69)
+val BackgroundLight = Color(0xFFFFF5F7)
+
+val White = Color(0xFFFFFFFF)
+val GlassWhite = Color(0xCCFFFFFF)
+val BorderGray = Color(0xFFE0E0E0)

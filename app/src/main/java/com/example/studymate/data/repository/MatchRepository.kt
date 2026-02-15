@@ -1,5 +1,6 @@
 package com.example.studymate.data.repository
 
+import android.content.Context
 import android.util.Log
 import com.example.studymate.data.model.Match
 import com.example.studymate.data.model.User
@@ -11,7 +12,7 @@ import kotlinx.coroutines.tasks.await
 class MatchRepository {
     private val db = FirebaseFirestore.getInstance()
 
-    suspend fun getMatches(currentUid: String): List<Pair<String, User>> {
+    suspend fun getMatches(context: Context, currentUid: String): List<Pair<String, User>> {
         Log.d("MatchRepository", "getMatches called for UID: '$currentUid'")
         if (currentUid.isBlank()) {
             Log.e("MatchRepository", "getMatches: currentUid is BLANK!")
@@ -19,7 +20,7 @@ class MatchRepository {
         }
 
         var retries = 0
-        val maxRetries = 3
+        val maxRetries = 5
         val delayMillis = 1000L
 
         while (retries < maxRetries) {
@@ -34,17 +35,29 @@ class MatchRepository {
                 if (!snapshot.isEmpty) {
                     val result = mutableListOf<Pair<String, User>>()
                     
+                    // Pre-load sample users from JSON if not already cached
+                    val sampleUsers = SampleData.getSampleUsers(context)
+
                     for (doc in snapshot.documents) {
                         val match = doc.toObject(Match::class.java)
                         if (match != null) {
                             val otherUid = match.users.find { it != currentUid }
-                            Log.d("MatchRepository", "Processing match ${doc.id}, users=${match.users}, otherUid='$otherUid'")
+                            Log.d("MatchRepository", "Processing match ${doc.id}, otherUid='$otherUid'")
                             
                             if (!otherUid.isNullOrBlank()) {
-                                var user = SampleData.sampleUsers.find { it.uid == otherUid }
+                                // 1. Try finding in sample users first (from JSON)
+                                var user = sampleUsers.find { it.uid == otherUid }
+                                
+                                // 2. If not found in sample, try finding in real Firestore users
                                 if (user == null) {
-                                    val userDoc = db.collection("users").document(otherUid).get().await()
-                                    user = userDoc.toObject(User::class.java)
+                                    try {
+                                        val userDoc = db.collection("users").document(otherUid).get().await()
+                                        if (userDoc.exists()) {
+                                            user = userDoc.toObject(User::class.java)
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.w("MatchRepository", "Failed to fetch remote user $otherUid: ${e.message}")
+                                    }
                                 }
                                 
                                 if (user != null) {
@@ -52,8 +65,6 @@ class MatchRepository {
                                 } else {
                                     Log.w("MatchRepository", "Could not find user data for UID: $otherUid")
                                 }
-                            } else {
-                                Log.w("MatchRepository", "Match ${doc.id} has invalid otherUid")
                             }
                         }
                     }

@@ -5,6 +5,7 @@ import com.example.studymate.data.model.Match
 import com.example.studymate.data.model.Swipe
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
 
 class SwipeRepository {
     private val db = FirebaseFirestore.getInstance()
@@ -35,6 +36,16 @@ class SwipeRepository {
                 Log.e("SwipeRepository", "Failed to save swipe: ${it.message}")
                 onResult(false, it.message, false)
             }
+    }
+
+    suspend fun getSwipedUserIds(currentUid: String): Set<String> {
+        return try {
+            val snapshot = swipesCollection.whereEqualTo("fromUser", currentUid).get().await()
+            snapshot.documents.mapNotNull { it.getString("toUser") }.toSet()
+        } catch (e: Exception) {
+            Log.e("SwipeRepository", "Error fetching swiped IDs: ${e.message}")
+            emptySet()
+        }
     }
 
     private fun createMatch(uid1: String, uid2: String, onResult: (Boolean, String?, Boolean) -> Unit) {

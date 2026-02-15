@@ -1,6 +1,5 @@
 package com.example.studymate
 
-import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -9,29 +8,34 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,15 +56,13 @@ import com.example.studymate.data.repository.UserRepository
 import com.example.studymate.data.util.SampleData
 import com.example.studymate.ui.chat.ChatViewModel
 import com.example.studymate.ui.matches.MatchesViewModel
+import com.example.studymate.ui.theme.*
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
-import com.google.android.gms.tasks.Task
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
-
-// ----------------------------------------------------
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,55 +75,38 @@ class MainActivity : ComponentActivity() {
         val userRepository = UserRepository()
 
         setContent {
-            MaterialTheme {
+            StudymateTheme {
                 val rootNavController = rememberNavController()
 
                 NavHost(
                     navController = rootNavController,
                     startDestination = "login"
                 ) {
-
-                    // ---------- LOGIN ----------
                     composable("login") {
-                        val authRepository = remember { AuthRepository() }
                         LoginScreen(
-                            onExistingUser = {
-                                // Check if profile is complete before navigating
-                                authRepository.checkIfProfileComplete { completed ->
-                                    if (completed) {
-                                        rootNavController.navigate("main") {
-                                            popUpTo("login") { inclusive = true }
-                                        }
-                                    } else {
-                                        rootNavController.navigate("onboarding") {
-                                            popUpTo("login") { inclusive = true }
-                                        }
+                            onLoginSuccess = { hasProfile ->
+                                if (hasProfile) {
+                                    rootNavController.navigate("main") {
+                                        popUpTo("login") { inclusive = true }
                                     }
-                                }
-                            },
-                            onNewUser = {
-                                rootNavController.navigate("onboarding") {
-                                    popUpTo("login") { inclusive = true }
+                                } else {
+                                    rootNavController.navigate("onboarding")
                                 }
                             }
                         )
                     }
-
-                    // ---------- ONBOARDING ----------
                     composable("onboarding") {
                         OnboardingScreen(
+                            userRepository = userRepository,
                             onContinueClick = {
-                                // After completing onboarding, go to main
                                 rootNavController.navigate("main") {
                                     popUpTo("login") { inclusive = true }
                                 }
                             }
                         )
                     }
-
-                    // ---------- MAIN ----------
                     composable("main") {
-                        MainAppScreen(manager, chatRepository, matchRepository, userRepository)
+                        MainAppScreen(rootNavController, manager, chatRepository, matchRepository, userRepository)
                     }
                 }
             }
@@ -129,27 +114,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ----------------------------------------------------
-// DATA
-// ----------------------------------------------------
-
-data class UserProfile(val name: String, val major: String, val year: String)
-
-val sampleUsers = mutableStateListOf(
-    UserProfile("Aarav", "CS", "Junior"),
-    UserProfile("Maya", "Biology", "Sophomore"),
-    UserProfile("Ethan", "Math", "Senior"),
-    UserProfile("Zara", "Engineering", "Freshman")
-)
-
-// ----------------------------------------------------
-// LOGIN SCREEN
-// ----------------------------------------------------
-
+// -------------------- LOGIN SCREEN (Valentine's Theme) --------------------
 @Composable
 fun LoginScreen(
-    onExistingUser: () -> Unit,
-    onNewUser: () -> Unit
+    onLoginSuccess: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val authRepository = remember { AuthRepository() }
@@ -158,117 +126,63 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var loginError by remember { mutableStateOf<String?>(null) }
 
-    // ---------- GOOGLE RESULT ----------
-    val googleLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-
-            val task: Task<com.google.android.gms.auth.api.signin.GoogleSignInAccount> =
-                GoogleSignIn.getSignedInAccountFromIntent(result.data)
-
-            try {
-                val account = task.getResult(ApiException::class.java)
-                val email = account?.email
-                val idToken = account?.idToken
-
-                if (email == null || !email.endsWith(".edu")) {
-                    loginError = "Only .edu emails allowed"
-                    return@rememberLauncherForActivityResult
+    val googleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)
+            if (account?.idToken != null) {
+                authRepository.signInWithGoogle(account.idToken!!) { success, error ->
+                    if (success) {
+                        authRepository.checkIfProfileComplete { completed ->
+                            onLoginSuccess(completed)
+                        }
+                    } else loginError = error
                 }
-
-                if (idToken != null) {
-                    authRepository.signInWithGoogle(idToken) { success, error ->
-                        if (success) {
-                            authRepository.checkIfProfileComplete { completed ->
-                                if (completed) onExistingUser()
-                                else onNewUser()
-                            }
-                        } else loginError = error
-                    }
-                }
-            } catch (e: Exception) {
-                loginError = e.message
             }
-        }
+        } catch (e: Exception) { loginError = e.message }
+    }
 
     val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
         .requestIdToken(context.getString(R.string.default_web_client_id))
         .requestEmail()
         .build()
-
     val googleClient = GoogleSignIn.getClient(context, gso)
 
-    // ---------- UI ----------
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFFFDE2E4), Color(0xFFFFF1E6))))
+            .background(Brush.verticalGradient(listOf(ValentineSoftPink, ValentinePink)))
     ) {
-
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
-            Text("StudyBuddy", fontSize = 32.sp, color = Color(0xFFB23A48))
-            Spacer(modifier = Modifier.height(24.dp))
+            Text("💖", fontSize = 64.sp)
+            Text("StudyMate", style = MaterialTheme.typography.displayLarge, color = ValentineDeepRose)
+            Text("Find Your Study Match", style = MaterialTheme.typography.titleLarge, color = ValentineDeepRose.copy(alpha = 0.7f))
+            
+            Spacer(modifier = Modifier.height(32.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp)
+                shape = RoundedCornerShape(32.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
-                Column(Modifier.padding(24.dp)) {
-
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it },
-                        label = { Text("Student Email") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(Modifier.height(16.dp))
-
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Password") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(Modifier.height(24.dp))
+                Column(Modifier.padding(0.dp), horizontalAlignment = Alignment.CenterHorizontally) {
 
                     Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            authRepository.login(email, password) { success, error ->
-                                if (success) {
-                                    authRepository.checkIfProfileComplete { completed ->
-                                        if (completed) onExistingUser()
-                                        else onNewUser()
-                                    }
-                                } else loginError = error
-                            }
-                        }
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        onClick = { googleLauncher.launch(googleClient.signInIntent) },
+                        colors = ButtonDefaults.buttonColors(containerColor = ValentineDeepRose),
+                        shape = RoundedCornerShape(16.dp)
                     ) {
-                        Text("Sign In")
+                        Text("Sign In with Google", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    OutlinedButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = {
-                            googleLauncher.launch(googleClient.signInIntent)
-                        }
-                    ) {
-                        Text("Sign In With Google")
-                    }
-
                     loginError?.let {
-                        Spacer(Modifier.height(12.dp))
-                        Text(it, color = Color.Red)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(it, color = ValentineDeepRose, textAlign = TextAlign.Center)
                     }
                 }
             }
@@ -276,14 +190,10 @@ fun LoginScreen(
     }
 }
 
-// ----------------------------------------------------
-// ONBOARDING
-// ----------------------------------------------------
-
+// -------------------- ONBOARDING --------------------
 @Composable
-fun OnboardingScreen(onContinueClick: () -> Unit) {
+fun OnboardingScreen(userRepository: UserRepository, onContinueClick: () -> Unit) {
     val context = LocalContext.current
-    val userRepository = remember { UserRepository() }
     val auth = FirebaseAuth.getInstance()
     
     var name by remember { mutableStateOf("") }
@@ -292,62 +202,70 @@ fun OnboardingScreen(onContinueClick: () -> Unit) {
     var bio by remember { mutableStateOf("") }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier.fillMaxSize().background(ValentineSoftPink).padding(32.dp),
         verticalArrangement = Arrangement.Center
     ) {
-
-        Text("Create Your Profile", fontSize = 28.sp)
-        Spacer(modifier = Modifier.height(24.dp))
+        Text("Build Your Profile", style = MaterialTheme.typography.displayLarge, color = ValentineDeepRose)
+        Spacer(modifier = Modifier.height(32.dp))
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
             label = { Text("Name") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))
         OutlinedTextField(
             value = major,
             onValueChange = { major = it },
             label = { Text("Major") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))
         OutlinedTextField(
             value = year,
             onValueChange = { year = it },
-            label = { Text("Year (e.g. Junior)") },
-            modifier = Modifier.fillMaxWidth()
+            label = { Text("Year") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))
-        OutlinedTextField(value = bio, onValueChange = { bio = it }, label = { Text("Bio") })
-
-        Spacer(Modifier.height(24.dp))
-
+        OutlinedTextField(
+            value = bio,
+            onValueChange = { bio = it },
+            label = { Text("Bio") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            minLines = 3
+        )
+        Spacer(Modifier.height(32.dp))
         Button(
             onClick = {
-                val uid = auth.currentUser?.uid ?: ""
-                val email = auth.currentUser?.email ?: ""
-                val newUser = User(
-                    uid = uid,
-                    name = name,
-                    email = email,
-                    major = major,
-                    year = year,
-                    bio = bio,
-                    createdAt = Timestamp.now(),
-                    profileComplete = true // NEW
-                )
-                
-                userRepository.saveUser(newUser) { success, error ->
-                    if (success) onContinueClick()
-                    else Toast.makeText(context, "Error: $error", Toast.LENGTH_LONG).show()
+                if (name.isNotBlank()) {
+                    val uid = auth.currentUser?.uid ?: ""
+                    val email = auth.currentUser?.email ?: ""
+                    val newUser = User(
+                        uid = uid, 
+                        name = name, 
+                        email = email, 
+                        major = major, 
+                        year = year, 
+                        bio = bio, 
+                        createdAt = Timestamp.now(),
+                        profileComplete = true
+                    )
+                    userRepository.saveUser(newUser) { success, error ->
+                        if (success) onContinueClick() else Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+                    }
                 }
             },
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Continue") }
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = ValentineDeepRose),
+            shape = RoundedCornerShape(16.dp)
+        ) { Text("Get Started", fontWeight = FontWeight.Bold) }
     }
 }
-
 
 // -------------------- SWIPE --------------------
 @Composable
@@ -363,44 +281,36 @@ fun SwipeScreen(userRepository: UserRepository) {
     val offsetX = remember { Animatable(0f) }
     val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        val remoteUsers = userRepository.getAllUsers().filter { it.uid != currentUid }
-        users = if (remoteUsers.isEmpty()) SampleData.sampleUsers else remoteUsers
+    LaunchedEffect(currentUid) {
+        val remoteUsers = userRepository.getAllUsers().filter { it.uid != currentUid && it.name.isNotBlank() }
+        val sampleUsers = SampleData.getSampleUsers(context)
+        val swipedIds = swipeRepository.getSwipedUserIds(currentUid)
+        users = (remoteUsers + sampleUsers).distinctBy { it.uid }.filter { it.uid !in swipedIds }
         isLoading = false
     }
 
     Box(
-        modifier = Modifier.fillMaxSize().background(Color(0xFFFDE2E4)),
+        modifier = Modifier.fillMaxSize().background(ValentineSoftPink),
         contentAlignment = Alignment.Center
     ) {
         if (isLoading) {
-            CircularProgressIndicator()
+            CircularProgressIndicator(color = ValentineDeepRose)
         } else if (users.isNotEmpty()) {
             val user = users.first()
             Box(
                 modifier = Modifier
                     .offset { IntOffset(offsetX.value.toInt(), 0) }
                     .rotate(offsetX.value / 40)
-                    .pointerInput(Unit) {
+                    .pointerInput(user.uid) {
                         detectDragGestures(
                             onDragEnd = {
                                 coroutineScope.launch {
                                     val liked = offsetX.value > 300
                                     val disliked = offsetX.value < -300
-                                    
                                     if (liked || disliked) {
-                                        if (liked) {
-                                            val swipe = Swipe(
-                                                fromUser = currentUid,
-                                                toUser = user.uid,
-                                                liked = true,
-                                                timestamp = Timestamp.now()
-                                            )
-                                            swipeRepository.performSwipe(swipe) { success, error, isMatch ->
-                                                if (isMatch) {
-                                                    Toast.makeText(context, "Added to Matches!", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
+                                        val swipe = Swipe(fromUser = currentUid, toUser = user.uid, liked = liked, timestamp = Timestamp.now())
+                                        swipeRepository.performSwipe(swipe) { _, _, isMatch ->
+                                            if (isMatch) Toast.makeText(context, "It's a Match! 💖", Toast.LENGTH_SHORT).show()
                                         }
                                         users = users.drop(1)
                                     }
@@ -415,27 +325,48 @@ fun SwipeScreen(userRepository: UserRepository) {
                 ProfileCard(user)
             }
         } else {
-            Text("No more students to swipe on!", color = Color.Gray)
+            Text("No more students! 💕", color = ValentineDeepRose, style = MaterialTheme.typography.titleLarge)
         }
 
         Row(
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 60.dp),
-            horizontalArrangement = Arrangement.spacedBy(40.dp)
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp),
+            horizontalArrangement = Arrangement.spacedBy(32.dp)
         ) {
-            IconButton(onClick = { if (users.isNotEmpty()) users = users.drop(1) }, modifier = Modifier.size(70.dp)) {
-                Text("❌", fontSize = 32.sp)
-            }
-            IconButton(onClick = { 
-                if (users.isNotEmpty()) {
-                    val targetUser = users.first()
-                    val swipe = Swipe(currentUid, targetUser.uid, true, Timestamp.now())
-                    swipeRepository.performSwipe(swipe) { _, _, isMatch ->
-                        if (isMatch) Toast.makeText(context, "Added to Matches!", Toast.LENGTH_SHORT).show()
+            Surface(
+                onClick = {
+                    if (users.isNotEmpty()) {
+                        val target = users.first()
+                        swipeRepository.performSwipe(Swipe(currentUid, target.uid, false, Timestamp.now())) { _, _, _ -> }
+                        users = users.drop(1)
                     }
-                    users = users.drop(1)
+                },
+                modifier = Modifier.size(72.dp),
+                shape = CircleShape,
+                color = Color.White,
+                shadowElevation = 4.dp
+            ) {
+                Box(Modifier.fillMaxSize().border(2.dp, Color.LightGray, CircleShape), contentAlignment = Alignment.Center) {
+                    Text("❌", fontSize = 28.sp)
                 }
-            }, modifier = Modifier.size(70.dp)) {
-                Text("❤️", fontSize = 32.sp)
+            }
+            Surface(
+                onClick = {
+                    if (users.isNotEmpty()) {
+                        val target = users.first()
+                        swipeRepository.performSwipe(Swipe(currentUid, target.uid, true, Timestamp.now())) { _, _, isMatch ->
+                            if (isMatch) Toast.makeText(context, "Matched! 💖", Toast.LENGTH_SHORT).show()
+                        }
+                        users = users.drop(1)
+                    }
+                },
+                modifier = Modifier.size(72.dp),
+                shape = CircleShape,
+                color = Color.White,
+                shadowElevation = 4.dp
+            ) {
+                Box(Modifier.fillMaxSize().border(2.dp, ValentineDeepRose, CircleShape), contentAlignment = Alignment.Center) {
+                    Text("❤️", fontSize = 28.sp)
+                }
             }
         }
     }
@@ -444,162 +375,122 @@ fun SwipeScreen(userRepository: UserRepository) {
 @Composable
 fun ProfileCard(user: User) {
     Card(
-        modifier = Modifier.fillMaxWidth(0.9f).height(500.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        modifier = Modifier.fillMaxWidth(0.85f).height(540.dp),
+        shape = RoundedCornerShape(32.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
     ) {
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp),
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Top
         ) {
-            Text(user.name, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Box(modifier = Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(24.dp)).background(ValentinePink.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
+                Text(user.name.take(1), fontSize = 80.sp, color = ValentineDeepRose)
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(user.name, style = MaterialTheme.typography.headlineMedium, color = ValentineDeepRose)
+            Text("${user.major} • ${user.year}", style = MaterialTheme.typography.titleLarge, color = TextDark)
             Spacer(modifier = Modifier.height(12.dp))
-            Text("Major: ${user.major}", fontSize = 18.sp)
-            Text("Year: ${user.year}", fontSize = 18.sp)
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(user.bio, fontSize = 16.sp, color = Color.Gray)
+            Text(user.bio, style = MaterialTheme.typography.bodyLarge, color = TextDark.copy(alpha = 0.8f))
         }
     }
 }
 
 // -------------------- MAIN APP SCREEN --------------------
 @Composable
-fun MainAppScreen(calendarManager: CalendarManager, chatRepository: ChatRepository, matchRepository: MatchRepository, userRepository: UserRepository) {
+fun MainAppScreen(rootNavController: NavController, calendarManager: CalendarManager, chatRepository: ChatRepository, matchRepository: MatchRepository, userRepository: UserRepository) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val context = LocalContext.current
 
     Scaffold(
         bottomBar = {
-            NavigationBar(
-                containerColor = Color.White
-            ) {
-                NavigationBarItem(
-                    selected = currentRoute == "swipe_tab",
-                    onClick = { navController.navigate("swipe_tab") },
-                    icon = { Text("🔥", fontSize = 20.sp) },
-                    label = { Text("Swipe") }
-                )
-                NavigationBarItem(
-                    selected = currentRoute == "matches_tab",
-                    onClick = { navController.navigate("matches_tab") },
-                    icon = { Text("💌", fontSize = 20.sp) },
-                    label = { Text("Matches") }
-                )
-                NavigationBarItem(
-                    selected = currentRoute == "calendar_tab",
-                    onClick = { navController.navigate("calendar_tab") },
-                    icon = { Text("📅", fontSize = 20.sp) },
-                    label = { Text("Calendar") }
-                )
-                NavigationBarItem(
-                    selected = currentRoute == "chatbot_tab",
-                    onClick = { navController.navigate("chatbot_tab") },
-                    icon = { Text("🤖", fontSize = 20.sp) },
-                    label = { Text("AI Buddy") }
-                )
-
-                NavigationBarItem(
-                    selected = currentRoute == "profile_tab",
-                    onClick = { navController.navigate("profile_tab") },
-                    icon = { Text("👤", fontSize = 20.sp) },
-                    label = { Text("Profile") }
-                )
+            NavigationBar(containerColor = Color.White, tonalElevation = 8.dp) {
+                listOf(
+                    "swipe_tab" to "🔥", 
+                    "matches_tab" to "💌", 
+                    "calendar_tab" to "📅", 
+                    "chatbot_tab" to "🤖",
+                    "profile_tab" to "👤"
+                ).forEach { (route, icon) ->
+                    NavigationBarItem(
+                        selected = currentRoute == route,
+                        onClick = { navController.navigate(route) },
+                        icon = { Text(icon, fontSize = 24.sp) },
+                        label = { Text(when(route){
+                            "swipe_tab" -> "Swipe"
+                            "matches_tab" -> "Matches"
+                            "calendar_tab" -> "Calendar"
+                            "chatbot_tab" -> "AI Buddy"
+                            else -> "Profile"
+                        }) },
+                        colors = NavigationBarItemDefaults.colors(selectedIconColor = ValentineDeepRose, indicatorColor = ValentinePink.copy(alpha = 0.3f))
+                    )
+                }
             }
         }
-    ) { paddingValues ->
-        NavHost(
-            navController = navController,
-            startDestination = "swipe_tab",
-            modifier = Modifier.padding(paddingValues)
-        ) {
+    ) { padding ->
+        NavHost(navController, startDestination = "swipe_tab", Modifier.padding(padding)) {
             composable("swipe_tab") { SwipeScreen(userRepository) }
             composable("matches_tab") { 
-                val matchesViewModel: MatchesViewModel = viewModel(
-                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-                        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                            @Suppress("UNCHECKED_CAST")
-                            return MatchesViewModel(matchRepository) as T
-                        }
-                    }
-                )
-                MatchesScreen(navController, matchesViewModel) 
+                val vm: MatchesViewModel = viewModel(factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T = MatchesViewModel(matchRepository, context.applicationContext) as T
+                })
+                MatchesScreen(navController, vm) 
             }
-            composable("profile_tab") { ProfileScreen(userRepository = UserRepository()) }
             composable("chatbot_tab") { ChatbotScreen() }
             composable("calendar_tab") {
-                val viewModel: CalendarViewModel = viewModel(
-                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-                        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                            @Suppress("UNCHECKED_CAST")
-                            return CalendarViewModel(calendarManager) as T
-                        }
-                    }
-                )
-                CalendarScreen(viewModel = viewModel, onBack = { })
+                val vm: CalendarViewModel = viewModel(factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T = CalendarViewModel(calendarManager) as T
+                })
+                CalendarScreen(vm, onBack = { })
             }
-            composable("profile_tab") { ProfileScreen(userRepository) }
+            composable("profile_tab") { 
+                ProfileScreen(userRepository) { 
+                    rootNavController.navigate("login") { 
+                        popUpTo("main") { inclusive = true } 
+                    } 
+                } 
+            }
             composable("chat/{matchId}/{otherUserName}") { backStackEntry ->
-                val matchId = backStackEntry.arguments?.getString("matchId") ?: ""
-                val otherUserName = backStackEntry.arguments?.getString("otherUserName") ?: ""
-                
-                val chatViewModel: ChatViewModel = viewModel(
-                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-                        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                            @Suppress("UNCHECKED_CAST")
-                            return ChatViewModel(chatRepository, matchId) as T
-                        }
-                    }
-                )
-                ChatScreen(otherUserName, chatViewModel)
+                val mid = backStackEntry.arguments?.getString("matchId") ?: ""
+                val name = backStackEntry.arguments?.getString("otherUserName") ?: ""
+                val vm: ChatViewModel = viewModel(factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T = ChatViewModel(chatRepository, mid) as T
+                })
+                ChatScreen(name, vm)
             }
         }
     }
 }
 
-// -------------------- MATCHES --------------------
 @Composable
 fun MatchesScreen(navController: NavController, viewModel: MatchesViewModel) {
     val matches by viewModel.matches.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    LaunchedEffect(Unit) { viewModel.loadMatches() }
 
-    LaunchedEffect(Unit) {
-        viewModel.loadMatches()
-    }
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp)
-    ) {
-        Text("Your Matches", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else if (matches.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No matches yet. Keep swiping!", color = Color.Gray)
-            }
-        } else {
-            LazyColumn {
-                items(matches) { (matchId, user) ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        onClick = {
-                            navController.navigate("chat/$matchId/${user.name}")
+    Column(Modifier.fillMaxSize().padding(24.dp)) {
+        Text("Matches", style = MaterialTheme.typography.displayLarge, color = ValentineDeepRose)
+        Spacer(Modifier.height(24.dp))
+        if (isLoading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = ValentineDeepRose) }
+        else LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            items(matches) { (mid, user) ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { navController.navigate("chat/$mid/${user.name}") },
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(56.dp).clip(CircleShape).background(ValentinePink), contentAlignment = Alignment.Center) {
+                            Text(user.name.take(1), color = ValentineDeepRose, fontWeight = FontWeight.Bold)
                         }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(user.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text(user.major, style = MaterialTheme.typography.bodySmall)
-                            }
-                            Text("💬", fontSize = 24.sp)
+                        Spacer(Modifier.width(16.dp))
+                        Column {
+                            Text(user.name, style = MaterialTheme.typography.titleLarge, color = ValentineDeepRose)
+                            Text(user.major, style = MaterialTheme.typography.bodyLarge, color = TextDark)
                         }
                     }
                 }
@@ -608,197 +499,111 @@ fun MatchesScreen(navController: NavController, viewModel: MatchesViewModel) {
     }
 }
 
-// -------------------- CHAT --------------------
 @Composable
 fun ChatScreen(userName: String, viewModel: ChatViewModel) {
     val messages by viewModel.messages.collectAsState()
-    var messageText by remember { mutableStateOf("") }
-    val currentUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+    var text by remember { mutableStateOf("") }
+    val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Header
-        Surface(shadowElevation = 4.dp) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(text = "Chat with $userName", style = MaterialTheme.typography.titleLarge)
+    Column(Modifier.fillMaxSize().background(BackgroundLight)) {
+        Surface(shadowElevation = 4.dp, color = Color.White) {
+            Row(Modifier.fillMaxWidth().padding(20.dp)) {
+                Text(userName, style = MaterialTheme.typography.titleLarge, color = ValentineDeepRose)
             }
         }
-
-        // Message List
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
-            reverseLayout = false
-        ) {
-            items(messages) { message ->
-                val isMe = message.senderId == currentUid
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    contentAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
-                ) {
+        LazyColumn(Modifier.weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(messages) { msg ->
+                val isMe = msg.senderId == uid
+                Box(Modifier.fillMaxWidth(), contentAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart) {
                     Surface(
-                        color = if (isMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
-                        shape = RoundedCornerShape(12.dp)
+                        color = if (isMe) ValentineDeepRose else Color.White,
+                        shape = RoundedCornerShape(16.dp),
+                        shadowElevation = 2.dp
                     ) {
-                        Text(
-                            text = message.text,
-                            modifier = Modifier.padding(12.dp),
-                            color = if (isMe) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
-                        )
+                        Text(msg.text, Modifier.padding(12.dp), color = if (isMe) Color.White else Color.Black)
                     }
                 }
             }
         }
-
-        // Input Field
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = messageText,
-                onValueChange = { messageText = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Type a message...") },
-                shape = RoundedCornerShape(24.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(
-                onClick = {
-                    if (messageText.isNotBlank()) {
-                        viewModel.sendMessage(messageText)
-                        messageText = ""
-                    }
-                },
-                enabled = messageText.isNotBlank()
-            ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = MaterialTheme.colorScheme.primary)
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(24.dp), placeholder = { Text("Send some love...") })
+            Spacer(Modifier.width(8.dp))
+            IconButton(onClick = { if (text.isNotBlank()) { viewModel.sendMessage(text); text = "" } }) {
+                Icon(Icons.AutoMirrored.Filled.Send, null, tint = ValentineDeepRose)
             }
         }
     }
 }
 
 @Composable
-fun ProfileScreen(userRepository: UserRepository) {
+fun ProfileScreen(userRepository: UserRepository, onSignOut: () -> Unit) {
     val context = LocalContext.current
     val auth = FirebaseAuth.getInstance()
-    val currentUid = auth.currentUser?.uid ?: ""
-    val coroutineScope = rememberCoroutineScope()
+    val uid = auth.currentUser?.uid ?: ""
 
     var name by remember { mutableStateOf("") }
     var major by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
     var bio by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(true) }
     var originalUser by remember { mutableStateOf<User?>(null) }
 
-    LaunchedEffect(currentUid) {
-        if (currentUid.isNotEmpty()) {
-            val user = userRepository.getUserSuspend(currentUid)
-            if (user != null) {
-                originalUser = user
-                name = user.name
-                major = user.major
-                year = user.year
-                bio = user.bio
-            }
-            isLoading = false
+    LaunchedEffect(Unit) {
+        userRepository.getUserSuspend(uid)?.let {
+            originalUser = it
+            name = it.name; major = it.major; year = it.year; bio = it.bio
         }
+        loading = false
     }
 
-    if (isLoading) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-    } else {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Top,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text("Your Profile", fontSize = 28.sp, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Name") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            OutlinedTextField(
-                value = major,
-                onValueChange = { major = it },
-                label = { Text("Major") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            OutlinedTextField(
-                value = year,
-                onValueChange = { year = it },
-                label = { Text("Year") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            OutlinedTextField(
-                value = bio,
-                onValueChange = { bio = it },
-                label = { Text("Bio") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3
-            )
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            Button(
-                onClick = {
-                    val updatedUser = originalUser?.copy(
-                        name = name,
-                        major = major,
-                        year = year,
-                        bio = bio
-                    ) ?: User(
-                        uid = currentUid,
-                        name = name,
-                        major = major,
-                        year = year,
-                        bio = bio,
-                        email = auth.currentUser?.email ?: ""
-                    )
-                    
-                    userRepository.saveUser(updatedUser) { success, error ->
-                        if (success) {
-                            Toast.makeText(context, "Profile updated!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "Update failed: $error", Toast.LENGTH_LONG).show()
-                        }
+    if (loading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = ValentineDeepRose) }
+    else Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("Your Profile", style = MaterialTheme.typography.displayLarge, color = ValentineDeepRose)
+        Spacer(Modifier.height(32.dp))
+        
+        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
+        Spacer(Modifier.height(16.dp))
+        OutlinedTextField(value = major, onValueChange = { major = it }, label = { Text("Major") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
+        Spacer(Modifier.height(16.dp))
+        OutlinedTextField(value = year, onValueChange = { year = it }, label = { Text("Year") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
+        Spacer(Modifier.height(16.dp))
+        OutlinedTextField(value = bio, onValueChange = { bio = it }, label = { Text("Bio") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), minLines = 3)
+        
+        Spacer(Modifier.height(32.dp))
+        
+        Button(
+            onClick = {
+                val updatedUser = originalUser?.copy(name = name, major = major, year = year, bio = bio) 
+                    ?: User(uid = uid, name = name, major = major, year = year, bio = bio, email = auth.currentUser?.email ?: "", profileComplete = true)
+                
+                userRepository.saveUser(updatedUser) { success, error ->
+                    if (success) {
+                        Toast.makeText(context, "Profile Updated!", Toast.LENGTH_SHORT).show()
+                        originalUser = updatedUser
+                    } else {
+                        Toast.makeText(context, "Error: $error", Toast.LENGTH_LONG).show()
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text("Save Changes")
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            TextButton(onClick = {
-                auth.signOut()
-                // You might need a way to navigate back to login here
-            }) {
-                Text("Sign Out", color = Color.Red)
-            }
+                }
+            },
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = ValentineDeepRose),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Text("Save Changes", fontWeight = FontWeight.Bold)
         }
+        
+        Spacer(Modifier.height(16.dp))
+        TextButton(onClick = { auth.signOut(); onSignOut() }) { Text("Sign Out", color = Color.Gray) }
     }
 }
 
-// --- NEW BOT-LIKE CHAT UI ---
+// --- CHATBOT SCREEN ---
 
 data class ChatMessage(val text: String, val isUser: Boolean)
 
@@ -812,13 +617,13 @@ fun ChatbotScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF9F9F9))
+            .background(BackgroundLight)
             .padding(16.dp)
     ) {
         Text(
             text = "AI Study Assistant",
-            fontSize = 20.sp,
-            color = Color(0xFFB23A48),
+            style = MaterialTheme.typography.headlineMedium,
+            color = ValentineDeepRose,
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
@@ -845,7 +650,7 @@ fun ChatbotScreen() {
                 placeholder = { Text("Type a message...") },
                 shape = RoundedCornerShape(24.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFFB23A48),
+                    focusedBorderColor = ValentineDeepRose,
                     unfocusedBorderColor = Color.LightGray
                 )
             )
@@ -879,12 +684,12 @@ fun ChatbotScreen() {
                         }
                     }
                 },
-                shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB23A48)),
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(containerColor = ValentineDeepRose),
                 contentPadding = PaddingValues(0.dp),
-                modifier = Modifier.size(50.dp)
+                modifier = Modifier.size(56.dp)
             ) {
-                Text("🚀")
+                Text("🚀", fontSize = 24.sp)
             }
         }
     }
@@ -893,8 +698,8 @@ fun ChatbotScreen() {
 @Composable
 fun ChatBubble(message: ChatMessage) {
     val alignment = if (message.isUser) Alignment.End else Alignment.Start
-    val bgColor = if (message.isUser) Color(0xFFB23A48) else Color(0xFFE9E9EB)
-    val textColor = if (message.isUser) Color.White else Color.Black
+    val bgColor = if (message.isUser) ValentineDeepRose else Color.White
+    val textColor = if (message.isUser) Color.White else TextDark
     val shape = if (message.isUser) {
         RoundedCornerShape(16.dp, 16.dp, 0.dp, 16.dp)
     } else {
@@ -905,20 +710,15 @@ fun ChatBubble(message: ChatMessage) {
         Surface(
             color = bgColor,
             shape = shape,
-            modifier = Modifier.widthIn(max = 280.dp)
+            modifier = Modifier.widthIn(max = 280.dp),
+            shadowElevation = 2.dp
         ) {
             Text(
                 text = message.text,
                 modifier = Modifier.padding(12.dp),
                 color = textColor,
-                fontSize = 15.sp
+                style = MaterialTheme.typography.bodyLarge
             )
-        }
-    }
-    @Composable
-    fun ProfileScreen() {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("User Profile Page")
         }
     }
 }

@@ -1,12 +1,16 @@
 package com.example.studymate
 
 import android.os.Bundle
+import android.content.Intent
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -34,8 +38,22 @@ import com.example.studymate.Calendar.data.repository.CalendarRepository
 import com.example.studymate.Calendar.domain.CalendarManager
 import com.example.studymate.Calendar.ui.CalendarScreen
 import com.example.studymate.Calendar.ui.CalendarViewModel
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.rotate
+import androidx.navigation.NavController
+import androidx.navigation.compose.*
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectDragGestures
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.tasks.Task
+import androidx.compose.ui.platform.LocalContext
+import com.example.studymate.data.auth.AuthRepository
 import kotlinx.coroutines.launch
 
+// -------------------- MAIN ACTIVITY --------------------
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +63,7 @@ class MainActivity : ComponentActivity() {
         val manager = CalendarManager(repository)
         
         setContent {
+
             MaterialTheme {
 
                 val rootNavController = rememberNavController()
@@ -81,13 +100,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-
-data class UserProfile(
-    val name: String,
-    val major: String,
-    val year: String
-)
-
+// -------------------- DATA --------------------
+data class UserProfile(val name: String, val major: String, val year: String)
 val sampleUsers = mutableStateListOf(
     UserProfile("Aarav", "CS", "Junior"),
     UserProfile("Maya", "Biology", "Sophomore"),
@@ -98,29 +112,66 @@ val sampleUsers = mutableStateListOf(
 @Composable
 fun LoginScreen(onLoginClick: () -> Unit) {
 
+    val context = LocalContext.current
+    val authRepository = remember { AuthRepository() }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var loginError by remember { mutableStateOf<String?>(null) }
 
+    // Google Sign-In launcher
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val task: Task<com.google.android.gms.auth.api.signin.GoogleSignInAccount> =
+            GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)
+            val email = account?.email
+            val idToken = account?.idToken
+
+            if (email == null || !email.trim().lowercase().endsWith(".edu")) {
+                loginError = "Only .edu emails are allowed"
+                return@rememberLauncherForActivityResult
+            }
+
+            if (idToken != null) {
+                authRepository.signInWithGoogle(idToken) { success, error ->
+                    if (success) onLoginClick()
+                    else loginError = error ?: "Google sign-in failed"
+                }
+            } else {
+                loginError = "Google sign-in failed"
+            }
+
+        } catch (e: ApiException) {
+            loginError = e.message ?: "Google sign-in failed"
+        }
+    }
+
+    val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+        .requestIdToken(context.getString(R.string.default_web_client_id))
+        .requestEmail()
+        .build()
+    val googleSignInClient = GoogleSignIn.getClient(context, gso)
+
+    // ---------------- UI ----------------
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFFFDE2E4),
-                        Color(0xFFFFF1E6)
-                    )
+                    colors = listOf(Color(0xFFFDE2E4), Color(0xFFFFF1E6))
                 )
             )
     ) {
 
-        // Decorative floating vibe layer
+        // Decorative floating vibe layer from calendar-feature
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .alpha(0.08f)
         ) {
-            // You can later add heart/book SVG background here
+            // Heart/book SVG background can go here
         }
 
         Column(
@@ -131,33 +182,18 @@ fun LoginScreen(onLoginClick: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            Text(
-                text = "StudyBuddy",
-                fontSize = 32.sp,
-                color = Color(0xFFB23A48)
-            )
-
+            Text("StudyBuddy", fontSize = 32.sp, color = Color(0xFFB23A48))
             Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Find your academic soulmate",
-                fontSize = 14.sp,
-                color = Color.Gray
-            )
-
+            Text("Find your academic soulmate", fontSize = 14.sp, color = Color.Gray)
             Spacer(modifier = Modifier.height(32.dp))
 
             Card(
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.White
-                ),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
                 modifier = Modifier.fillMaxWidth()
             ) {
 
-                Column(
-                    modifier = Modifier.padding(24.dp)
-                ) {
+                Column(modifier = Modifier.padding(24.dp)) {
 
                     OutlinedTextField(
                         value = email,
@@ -182,21 +218,43 @@ fun LoginScreen(onLoginClick: () -> Unit) {
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Button(
-                        onClick = { onLoginClick() },
+                        onClick = {
+                            if (!email.trim().lowercase().endsWith(".edu")) {
+                                loginError = "Only .edu emails are allowed"
+                                return@Button
+                            }
+
+                            authRepository.login(email, password) { success, error ->
+                                if (success) onLoginClick()
+                                else loginError = error ?: "Login failed"
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Text("Sign In")
                     }
-
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    // Google Sign-In Button
                     OutlinedButton(
-                        onClick = { /* TODO Google Sign In */ },
+                        onClick = {
+                            val signInIntent: Intent = googleSignInClient.signInIntent
+                            googleSignInLauncher.launch(signInIntent)
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Text("Sign In with Google")
+                    }
+
+                    if (loginError != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(loginError!!, color = Color.Red)
                     }
                 }
             }
@@ -204,67 +262,65 @@ fun LoginScreen(onLoginClick: () -> Unit) {
     }
 }
 
+// -------------------- ONBOARDING --------------------
 @Composable
 fun OnboardingScreen(onContinueClick: () -> Unit) {
+
     var name by remember { mutableStateOf("") }
     var major by remember { mutableStateOf("") }
     var classes by remember { mutableStateOf("") }
     var bio by remember { mutableStateOf("") }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center
+modifier = Modifier
+    .fillMaxSize()
+    .padding(24.dp),
+verticalArrangement = Arrangement.Center
+) {
+    Text("Create Your Profile", fontSize = 28.sp)
+    Spacer(modifier = Modifier.height(24.dp))
+
+    OutlinedTextField(
+        value = name,
+        onValueChange = { name = it },
+        label = { Text("Name") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+
+    OutlinedTextField(
+        value = major,
+        onValueChange = { major = it },
+        label = { Text("Major") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+
+    OutlinedTextField(
+        value = classes,
+        onValueChange = { classes = it },
+        label = { Text("Classes (comma separated)"),
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+
+    OutlinedTextField(
+        value = bio,
+        onValueChange = { bio = it },
+        label = { Text("Short Bio") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(modifier = Modifier.height(24.dp))
+
+    Button(
+        onClick = onContinueClick,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Text("Create Your Profile", fontSize = 28.sp)
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Name") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = major,
-            onValueChange = { major = it },
-            label = { Text("Major") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = classes,
-            onValueChange = { classes = it },
-            label = { Text("Classes (comma separated)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = bio,
-            onValueChange = { bio = it },
-            label = { Text("Short Bio") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(
-            onClick = { onContinueClick() },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Continue")
-        }
+        Text("Continue")
     }
 }
+
+// -------------------- SWIPE --------------------
 
 @Composable
 fun SwipeScreen() {
@@ -466,6 +522,7 @@ fun MatchesScreen(navController: NavController) {
     }
 }
 
+// -------------------- CHAT --------------------
 @Composable
 fun ChatScreen(userName: String) {
     Column(

@@ -12,7 +12,8 @@ data class User(
     val bio: String = "",
     val photoUrl: String = "",
     val createdAt: Timestamp? = null,
-    val calendar: UserCalendar = UserCalendar()
+    val calendar: UserCalendar = UserCalendar(),
+    val profileComplete: Boolean = false
 )
 
 data class UserCalendar(

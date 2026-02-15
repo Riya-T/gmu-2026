@@ -83,14 +83,26 @@ class MainActivity : ComponentActivity() {
 
                     // ---------- LOGIN ----------
                     composable("login") {
+                        val authRepository = remember { AuthRepository() }
                         LoginScreen(
                             onExistingUser = {
-                                rootNavController.navigate("main") {
-                                    popUpTo("login") { inclusive = true }
+                                // Check if profile is complete before navigating
+                                authRepository.checkIfProfileComplete { completed ->
+                                    if (completed) {
+                                        rootNavController.navigate("main") {
+                                            popUpTo("login") { inclusive = true }
+                                        }
+                                    } else {
+                                        rootNavController.navigate("onboarding") {
+                                            popUpTo("login") { inclusive = true }
+                                        }
+                                    }
                                 }
                             },
                             onNewUser = {
-                                rootNavController.navigate("onboarding")
+                                rootNavController.navigate("onboarding") {
+                                    popUpTo("login") { inclusive = true }
+                                }
                             }
                         )
                     }
@@ -99,6 +111,7 @@ class MainActivity : ComponentActivity() {
                     composable("onboarding") {
                         OnboardingScreen(
                             onContinueClick = {
+                                // After completing onboarding, go to main
                                 rootNavController.navigate("main") {
                                     popUpTo("login") { inclusive = true }
                                 }
@@ -277,7 +290,6 @@ fun OnboardingScreen(onContinueClick: () -> Unit) {
     var major by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
     var bio by remember { mutableStateOf("") }
-    var year by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -307,12 +319,6 @@ fun OnboardingScreen(onContinueClick: () -> Unit) {
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(modifier = Modifier.height(16.dp))
-        OutlinedTextField(
-            value = year,
-            onValueChange = { year = it },
-            label = { Text("Year (Freshman, Sophomore, Junior, Senior)") },
-            modifier = Modifier.fillMaxWidth()
-        )
         OutlinedTextField(value = bio, onValueChange = { bio = it }, label = { Text("Bio") })
 
         Spacer(Modifier.height(24.dp))
@@ -328,7 +334,8 @@ fun OnboardingScreen(onContinueClick: () -> Unit) {
                     major = major,
                     year = year,
                     bio = bio,
-                    createdAt = Timestamp.now()
+                    createdAt = Timestamp.now(),
+                    profileComplete = true // NEW
                 )
                 
                 userRepository.saveUser(newUser) { success, error ->
@@ -518,7 +525,7 @@ fun MainAppScreen(calendarManager: CalendarManager, chatRepository: ChatReposito
                 )
                 MatchesScreen(navController, matchesViewModel) 
             }
-            composable("profile_tab") { ProfileScreen() }
+            composable("profile_tab") { ProfileScreen(userRepository = UserRepository()) }
             composable("chatbot_tab") { ChatbotScreen() }
             composable("calendar_tab") {
                 val viewModel: CalendarViewModel = viewModel(

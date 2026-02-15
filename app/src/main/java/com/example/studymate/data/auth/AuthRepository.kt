@@ -50,13 +50,13 @@ class AuthRepository {
     // --------------------
     fun checkIfProfileComplete(onResult: (Boolean) -> Unit) {
         val uid = auth.currentUser?.uid ?: return
-
-        db.collection("users")
+        FirebaseFirestore.getInstance()
+            .collection("users")
             .document(uid)
             .get()
             .addOnSuccessListener { doc ->
-                val completed = doc.getBoolean("profileComplete") ?: false
-                onResult(completed)
+                val complete = doc.getBoolean("profileComplete") ?: false
+                onResult(complete)
             }
             .addOnFailureListener {
                 onResult(false)

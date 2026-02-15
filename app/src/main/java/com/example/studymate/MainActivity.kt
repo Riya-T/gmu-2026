@@ -1,8 +1,11 @@
 package com.example.studymate
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -22,18 +25,33 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.compose.*
+import com.example.studymate.Calendar.data.repository.CalendarRepository
+import com.example.studymate.Calendar.domain.CalendarManager
+import com.example.studymate.Calendar.ui.CalendarScreen
+import com.example.studymate.Calendar.ui.CalendarViewModel
+import com.example.studymate.data.auth.AuthRepository
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.tasks.Task
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val repository = CalendarRepository()
+        val manager = CalendarManager(repository)
+
         setContent {
             MaterialTheme {
                 val rootNavController = rememberNavController()
@@ -43,25 +61,17 @@ class MainActivity : ComponentActivity() {
                     startDestination = "login"
                 ) {
                     composable("login") {
-                        LoginScreen(
-                            onLoginClick = {
-                                rootNavController.navigate("onboarding")
-                            }
-                        )
+                        LoginScreen(onLoginClick = { rootNavController.navigate("onboarding") })
                     }
-
                     composable("onboarding") {
-                        OnboardingScreen(
-                            onContinueClick = {
-                                rootNavController.navigate("main") {
-                                    popUpTo("login") { inclusive = true }
-                                }
+                        OnboardingScreen(onContinueClick = {
+                            rootNavController.navigate("main") {
+                                popUpTo("login") { inclusive = true }
                             }
-                        )
+                        })
                     }
-
                     composable("main") {
-                        MainAppScreen()
+                        MainAppScreen(manager)
                     }
                 }
             }
@@ -69,12 +79,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-data class UserProfile(
-    val name: String,
-    val major: String,
-    val year: String
-)
-
+// -------------------- DATA --------------------
+data class UserProfile(val name: String, val major: String, val year: String)
 val sampleUsers = mutableStateListOf(
     UserProfile("Aarav", "CS", "Junior"),
     UserProfile("Maya", "Biology", "Sophomore"),
@@ -82,84 +88,116 @@ val sampleUsers = mutableStateListOf(
     UserProfile("Zara", "Engineering", "Freshman")
 )
 
+// -------------------- LOGIN SCREEN --------------------
 @Composable
 fun LoginScreen(onLoginClick: () -> Unit) {
+    val context = LocalContext.current
+    val authRepository = remember { AuthRepository() }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var loginError by remember { mutableStateOf<String?>(null) }
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val task: Task<com.google.android.gms.auth.api.signin.GoogleSignInAccount> =
+            GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)
+            val email = account?.email
+            val idToken = account?.idToken
+
+            if (email == null || !email.trim().lowercase().endsWith(".edu")) {
+                loginError = "Only .edu emails are allowed"
+                return@rememberLauncherForActivityResult
+            }
+
+            if (idToken != null) {
+                authRepository.signInWithGoogle(idToken) { success, error ->
+                    if (success) onLoginClick()
+                    else loginError = error ?: "Google sign-in failed"
+                }
+            } else loginError = "Google sign-in failed"
+
+        } catch (e: ApiException) {
+            loginError = e.message ?: "Google sign-in failed"
+        }
+    }
+
+    val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+        .requestIdToken(context.getString(R.string.default_web_client_id))
+        .requestEmail()
+        .build()
+    val googleSignInClient = GoogleSignIn.getClient(context, gso)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFFFDE2E4),
-                        Color(0xFFFFF1E6)
-                    )
-                )
-            )
+            .background(Brush.verticalGradient(listOf(Color(0xFFFDE2E4), Color(0xFFFFF1E6))))
     ) {
+        Box(modifier = Modifier.fillMaxSize().alpha(0.08f)) {}
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
+            modifier = Modifier.fillMaxSize().padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "StudyBuddy",
-                fontSize = 32.sp,
-                color = Color(0xFFB23A48)
-            )
-
+            Text("StudyBuddy", fontSize = 32.sp, color = Color(0xFFB23A48))
             Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Find your academic soulmate",
-                fontSize = 14.sp,
-                color = Color.Gray
-            )
-
+            Text("Find your academic soulmate", fontSize = 14.sp, color = Color.Gray)
             Spacer(modifier = Modifier.height(32.dp))
 
             Card(
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.White
-                ),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier.padding(24.dp)
-                ) {
+                Column(modifier = Modifier.padding(24.dp)) {
                     OutlinedTextField(
                         value = email,
                         onValueChange = { email = it },
                         label = { Text("Student Email") },
                         modifier = Modifier.fillMaxWidth()
                     )
-
                     Spacer(modifier = Modifier.height(16.dp))
-
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
                         label = { Text("Password") },
                         visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Password
-                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         modifier = Modifier.fillMaxWidth()
                     )
-
                     Spacer(modifier = Modifier.height(24.dp))
-
                     Button(
-                        onClick = { onLoginClick() },
+                        onClick = {
+                            if (!email.trim().lowercase().endsWith(".edu")) {
+                                loginError = "Only .edu emails are allowed"
+                                return@Button
+                            }
+                            authRepository.login(email, password) { success, error ->
+                                if (success) onLoginClick()
+                                else loginError = error ?: "Login failed"
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Text("Sign In")
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = {
+                            val signInIntent: Intent = googleSignInClient.signInIntent
+                            googleSignInLauncher.launch(signInIntent)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text("Sign In with Google")
+                    }
+                    loginError?.let {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(it, color = Color.Red)
                     }
                 }
             }
@@ -167,6 +205,7 @@ fun LoginScreen(onLoginClick: () -> Unit) {
     }
 }
 
+// -------------------- ONBOARDING --------------------
 @Composable
 fun OnboardingScreen(onContinueClick: () -> Unit) {
     var name by remember { mutableStateOf("") }
@@ -175,42 +214,47 @@ fun OnboardingScreen(onContinueClick: () -> Unit) {
     var bio by remember { mutableStateOf("") }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
+        modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
         Text("Create Your Profile", fontSize = 28.sp)
-
         Spacer(modifier = Modifier.height(24.dp))
-
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
             label = { Text("Name") },
             modifier = Modifier.fillMaxWidth()
         )
-
         Spacer(modifier = Modifier.height(16.dp))
-
         OutlinedTextField(
             value = major,
             onValueChange = { major = it },
             label = { Text("Major") },
             modifier = Modifier.fillMaxWidth()
         )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(
-            onClick = { onContinueClick() },
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(
+            value = classes,
+            onValueChange = { classes = it },
+            label = { Text("Classes (comma separated)") },
             modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Continue")
-        }
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(
+            value = bio,
+            onValueChange = { bio = it },
+            label = { Text("Short Bio") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(
+            onClick = onContinueClick,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Continue") }
     }
 }
 
+// -------------------- SWIPE --------------------
 @Composable
 fun SwipeScreen() {
     val users = sampleUsers
@@ -218,14 +262,11 @@ fun SwipeScreen() {
     val coroutineScope = rememberCoroutineScope()
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFFDE2E4)),
+        modifier = Modifier.fillMaxSize().background(Color(0xFFFDE2E4)),
         contentAlignment = Alignment.Center
     ) {
         if (users.isNotEmpty()) {
             val user = users.first()
-
             Box(
                 modifier = Modifier
                     .offset { IntOffset(offsetX.value.toInt(), 0) }
@@ -234,16 +275,12 @@ fun SwipeScreen() {
                         detectDragGestures(
                             onDragEnd = {
                                 coroutineScope.launch {
-                                    if (offsetX.value > 300 || offsetX.value < -300) {
-                                        users.removeAt(0)
-                                    }
+                                    if (offsetX.value > 300 || offsetX.value < -300) users.removeAt(0)
                                     offsetX.animateTo(0f, tween(300))
                                 }
                             }
                         ) { _, dragAmount ->
-                            coroutineScope.launch {
-                                offsetX.snapTo(offsetX.value + dragAmount.x)
-                            }
+                            coroutineScope.launch { offsetX.snapTo(offsetX.value + dragAmount.x) }
                         }
                     }
             ) {
@@ -252,22 +289,13 @@ fun SwipeScreen() {
         }
 
         Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 60.dp),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 60.dp),
             horizontalArrangement = Arrangement.spacedBy(40.dp)
         ) {
-            IconButton(
-                onClick = { if (users.isNotEmpty()) users.removeAt(0) },
-                modifier = Modifier.size(70.dp)
-            ) {
+            IconButton(onClick = { if (users.isNotEmpty()) users.removeAt(0) }, modifier = Modifier.size(70.dp)) {
                 Text("❌", fontSize = 32.sp)
             }
-
-            IconButton(
-                onClick = { if (users.isNotEmpty()) users.removeAt(0) },
-                modifier = Modifier.size(70.dp)
-            ) {
+            IconButton(onClick = { if (users.isNotEmpty()) users.removeAt(0) }, modifier = Modifier.size(70.dp)) {
                 Text("❤️", fontSize = 32.sp)
             }
         }
@@ -277,16 +305,12 @@ fun SwipeScreen() {
 @Composable
 fun ProfileCard(user: UserProfile) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth(0.9f)
-            .height(500.dp),
+        modifier = Modifier.fillMaxWidth(0.9f).height(500.dp),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
+            modifier = Modifier.fillMaxSize().padding(24.dp),
             verticalArrangement = Arrangement.Center
         ) {
             Text(user.name, fontSize = 28.sp)
@@ -297,8 +321,9 @@ fun ProfileCard(user: UserProfile) {
     }
 }
 
+// -------------------- MAIN APP SCREEN --------------------
 @Composable
-fun MainAppScreen() {
+fun MainAppScreen(calendarManager: CalendarManager) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -314,14 +339,18 @@ fun MainAppScreen() {
                     icon = { Text("🔥", fontSize = 20.sp) },
                     label = { Text("Swipe") }
                 )
-
                 NavigationBarItem(
                     selected = currentRoute == "matches_tab",
                     onClick = { navController.navigate("matches_tab") },
                     icon = { Text("💌", fontSize = 20.sp) },
                     label = { Text("Matches") }
                 )
-
+                NavigationBarItem(
+                    selected = currentRoute == "calendar_tab",
+                    onClick = { navController.navigate("calendar_tab") },
+                    icon = { Text("📅", fontSize = 20.sp) },
+                    label = { Text("Calendar") }
+                )
                 NavigationBarItem(
                     selected = currentRoute == "chatbot_tab",
                     onClick = { navController.navigate("chatbot_tab") },
@@ -347,6 +376,18 @@ fun MainAppScreen() {
             composable("matches_tab") { MatchesScreen(navController) }
             composable("profile_tab") { ProfileScreen() }
             composable("chatbot_tab") { ChatbotScreen() }
+            composable("calendar_tab") {
+                val viewModel: CalendarViewModel = viewModel(
+                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                            @Suppress("UNCHECKED_CAST")
+                            return CalendarViewModel(calendarManager) as T
+                        }
+                    }
+                )
+                CalendarScreen(viewModel = viewModel, onBack = { })
+            }
+            composable("profile_tab") { ProfileScreen() }
             composable("chat/{userName}") { backStackEntry ->
                 val userName = backStackEntry.arguments?.getString("userName") ?: ""
                 ChatScreen(userName)
@@ -355,17 +396,23 @@ fun MainAppScreen() {
     }
 }
 
+// -------------------- MATCHES --------------------
 @Composable
 fun MatchesScreen(navController: NavController) {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp)
+    ) {
         Text("Your Matches", fontSize = 24.sp)
         Spacer(modifier = Modifier.height(16.dp))
         sampleUsers.forEach { user ->
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                onClick = { navController.navigate("chat/${user.name}") }
-            ) {
-                Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), onClick = {
+                navController.navigate("chat/${user.name}")
+            }) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(user.name)
                     Text("💬")
                 }
@@ -374,6 +421,7 @@ fun MatchesScreen(navController: NavController) {
     }
 }
 
+// -------------------- CHAT --------------------
 @Composable
 fun ChatScreen(userName: String) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -506,5 +554,9 @@ fun ChatBubble(message: ChatMessage) {
                 fontSize = 15.sp
             )
         }
+    }
+fun ProfileScreen() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text("User Profile Page")
     }
 }

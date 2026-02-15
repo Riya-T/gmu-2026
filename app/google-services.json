@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "846072466009",
+    "project_id": "gmu-2026",
+    "storage_bucket": "gmu-2026.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:846072466009:android:30644a654da02aa68a3f48",
+        "android_client_info": {
+          "package_name": "com.example.studymate"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "846072466009-el9ah666241t0n3ht0pck8rdvg6ju22j.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.studymate",
+            "certificate_hash": "1407eafaf02cbbc1d1bccef632fe0c835f926870"
+          }
+        },
+        {
+          "client_id": "846072466009-li1dr74f7j95t63td0f2kenqouk2onfg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbzQ0PMtCalTD_vkyp02L6LmIuItcbhWw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "846072466009-li1dr74f7j95t63td0f2kenqouk2onfg.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

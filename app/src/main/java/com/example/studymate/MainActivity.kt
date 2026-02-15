@@ -5,6 +5,10 @@ import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -15,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -23,6 +28,16 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import com.example.studymate.Calendar.data.repository.CalendarRepository
+import com.example.studymate.Calendar.domain.CalendarManager
+import com.example.studymate.Calendar.ui.CalendarScreen
+import com.example.studymate.Calendar.ui.CalendarViewModel
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.rotate
 import androidx.navigation.NavController
@@ -42,6 +57,11 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Initialize Calendar dependencies
+        val repository = CalendarRepository()
+        val manager = CalendarManager(repository)
+        
         setContent {
 
             MaterialTheme {
@@ -72,7 +92,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable("main") {
-                        MainAppScreen()
+                        MainAppScreen(manager)
                     }
                 }
             }
@@ -89,7 +109,6 @@ val sampleUsers = mutableStateListOf(
     UserProfile("Zara", "Engineering", "Freshman")
 )
 
-// -------------------- LOGIN SCREEN --------------------
 @Composable
 fun LoginScreen(onLoginClick: () -> Unit) {
 
@@ -129,7 +148,6 @@ fun LoginScreen(onLoginClick: () -> Unit) {
         }
     }
 
-    // GoogleSignInClient
     val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
         .requestIdToken(context.getString(R.string.default_web_client_id))
         .requestEmail()
@@ -140,14 +158,21 @@ fun LoginScreen(onLoginClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFFFDE2E4), Color(0xFFFFF1E6))))
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(Color(0xFFFDE2E4), Color(0xFFFFF1E6))
+                )
+            )
     ) {
 
+        // Decorative floating vibe layer from calendar-feature
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .alpha(0.08f)
-        )
+        ) {
+            // Heart/book SVG background can go here
+        }
 
         Column(
             modifier = Modifier
@@ -176,6 +201,7 @@ fun LoginScreen(onLoginClick: () -> Unit) {
                         label = { Text("Student Email") },
                         modifier = Modifier.fillMaxWidth()
                     )
+
                     Spacer(modifier = Modifier.height(16.dp))
 
                     OutlinedTextField(
@@ -183,12 +209,14 @@ fun LoginScreen(onLoginClick: () -> Unit) {
                         onValueChange = { password = it },
                         label = { Text("Password") },
                         visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     )
+
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Email/Password Sign In Button with .edu check
                     Button(
                         onClick = {
                             if (!email.trim().lowercase().endsWith(".edu")) {
@@ -201,6 +229,10 @@ fun LoginScreen(onLoginClick: () -> Unit) {
                                 else loginError = error ?: "Login failed"
                             }
                         },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp)
                     ) {
@@ -240,34 +272,66 @@ fun OnboardingScreen(onContinueClick: () -> Unit) {
     var bio by remember { mutableStateOf("") }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center
+modifier = Modifier
+    .fillMaxSize()
+    .padding(24.dp),
+verticalArrangement = Arrangement.Center
+) {
+    Text("Create Your Profile", fontSize = 28.sp)
+    Spacer(modifier = Modifier.height(24.dp))
+
+    OutlinedTextField(
+        value = name,
+        onValueChange = { name = it },
+        label = { Text("Name") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+
+    OutlinedTextField(
+        value = major,
+        onValueChange = { major = it },
+        label = { Text("Major") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+
+    OutlinedTextField(
+        value = classes,
+        onValueChange = { classes = it },
+        label = { Text("Classes (comma separated)"),
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+
+    OutlinedTextField(
+        value = bio,
+        onValueChange = { bio = it },
+        label = { Text("Short Bio") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(modifier = Modifier.height(24.dp))
+
+    Button(
+        onClick = onContinueClick,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Text("Create Your Profile", fontSize = 28.sp)
-        Spacer(modifier = Modifier.height(24.dp))
-
-        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
-        Spacer(modifier = Modifier.height(16.dp))
-        OutlinedTextField(value = major, onValueChange = { major = it }, label = { Text("Major") })
-        Spacer(modifier = Modifier.height(16.dp))
-        OutlinedTextField(value = classes, onValueChange = { classes = it }, label = { Text("Classes (comma separated)") })
-        Spacer(modifier = Modifier.height(16.dp))
-        OutlinedTextField(value = bio, onValueChange = { bio = it }, label = { Text("Short Bio") })
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(onClick = onContinueClick, modifier = Modifier.fillMaxWidth()) { Text("Continue") }
+        Text("Continue")
     }
 }
 
 // -------------------- SWIPE --------------------
+
 @Composable
 fun SwipeScreen() {
     val users = sampleUsers
     val offsetX = remember { Animatable(0f) }
-    val scope = rememberCoroutineScope()
+    val coroutineScope = rememberCoroutineScope()
 
     Box(
-        modifier = Modifier.fillMaxSize().background(Color(0xFFFDE2E4)),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFFDE2E4)),
         contentAlignment = Alignment.Center
     ) {
         if (users.isNotEmpty()) {
@@ -279,30 +343,64 @@ fun SwipeScreen() {
                     .pointerInput(Unit) {
                         detectDragGestures(
                             onDragEnd = {
-                                scope.launch {
-                                    if (kotlin.math.abs(offsetX.value) > 300) users.removeAt(0)
+                                coroutineScope.launch {
+                                    if (offsetX.value > 300 || offsetX.value < -300) {
+                                        users.removeAt(0)
+                                    }
                                     offsetX.animateTo(0f, tween(300))
                                 }
                             }
                         ) { _, dragAmount ->
-                            scope.launch { offsetX.snapTo(offsetX.value + dragAmount.x) }
+                            coroutineScope.launch {
+                                offsetX.snapTo(offsetX.value + dragAmount.x)
+                            }
                         }
                     }
-            ) { ProfileCard(user) }
+            ) {
+                ProfileCard(user)
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 60.dp),
+            horizontalArrangement = Arrangement.spacedBy(40.dp)
+        ) {
+            IconButton(
+                onClick = {
+                    if (users.isNotEmpty()) users.removeAt(0)
+                },
+                modifier = Modifier.size(70.dp)
+            ) {
+                Text("❌", fontSize = 32.sp)
+            }
+
+            IconButton(
+                onClick = {
+                    if (users.isNotEmpty()) users.removeAt(0)
+                },
+                modifier = Modifier.size(70.dp)
+            ) {
+                Text("❤️", fontSize = 32.sp)
+            }
         }
     }
 }
 
-// -------------------- PROFILE CARD --------------------
 @Composable
 fun ProfileCard(user: UserProfile) {
     Card(
-        modifier = Modifier.fillMaxWidth(0.9f).height(500.dp),
+        modifier = Modifier
+            .fillMaxWidth(0.9f)
+            .height(500.dp),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(24.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
             verticalArrangement = Arrangement.Center
         ) {
             Text(user.name, fontSize = 28.sp)
@@ -313,38 +411,109 @@ fun ProfileCard(user: UserProfile) {
     }
 }
 
-// -------------------- MAIN APP --------------------
 @Composable
-fun MainAppScreen() {
+fun MainAppScreen(calendarManager: CalendarManager) {
     val navController = rememberNavController()
-    Scaffold(bottomBar = {
-        NavigationBar {
-            NavigationBarItem(false, { navController.navigate("swipe_tab") }, { Text("🔥") })
-            NavigationBarItem(false, { navController.navigate("matches_tab") }, { Text("💌") })
-            NavigationBarItem(false, { navController.navigate("profile_tab") }, { Text("👤") })
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = currentRoute == "swipe_tab",
+                    onClick = { navController.navigate("swipe_tab") },
+                    icon = { Text("🔥", fontSize = 20.sp) },
+                    label = { Text("Swipe") }
+                )
+
+                NavigationBarItem(
+                    selected = currentRoute == "matches_tab",
+                    onClick = { navController.navigate("matches_tab") },
+                    icon = { Text("💌", fontSize = 20.sp) },
+                    label = { Text("Matches") }
+                )
+
+                // Calendar Icon added right after matches
+                NavigationBarItem(
+                    selected = currentRoute == "calendar_tab",
+                    onClick = { navController.navigate("calendar_tab") },
+                    icon = { Text("📅", fontSize = 20.sp) },
+                    label = { Text("Calendar") }
+                )
+
+                NavigationBarItem(
+                    selected = currentRoute == "profile_tab",
+                    onClick = { navController.navigate("profile_tab") },
+                    icon = { Text("👤", fontSize = 20.sp) },
+                    label = { Text("Profile") }
+                )
+            }
         }
-    }) { padding ->
-        NavHost(navController = navController, startDestination = "swipe_tab", modifier = Modifier.padding(padding)) {
-            composable("swipe_tab") { SwipeScreen() }
-            composable("matches_tab") { MatchesScreen(navController) }
-            composable("profile_tab") { ProfileScreen() }
-            composable("chat/{userName}") { ChatScreen(it.arguments?.getString("userName") ?: "") }
+    ) { paddingValues ->
+        NavHost(
+            navController = navController,
+            startDestination = "swipe_tab",
+            modifier = Modifier.padding(paddingValues)
+        ) {
+            composable("swipe_tab") {
+                SwipeScreen()
+            }
+
+            composable("matches_tab") {
+                MatchesScreen(navController)
+            }
+
+            composable("calendar_tab") {
+                val viewModel: CalendarViewModel = viewModel(
+                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                            @Suppress("UNCHECKED_CAST")
+                            return CalendarViewModel(calendarManager) as T
+                        }
+                    }
+                )
+                CalendarScreen(
+                    viewModel = viewModel,
+                    onBack = { /* Stay on tab */ }
+                )
+            }
+
+            composable("profile_tab") {
+                ProfileScreen()
+            }
+
+            composable("chat/{userName}") { backStackEntry ->
+                val userName = backStackEntry.arguments?.getString("userName") ?: ""
+                ChatScreen(userName)
+            }
         }
     }
 }
 
-// -------------------- MATCHES --------------------
 @Composable
 fun MatchesScreen(navController: NavController) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
         Text("Your Matches", fontSize = 24.sp)
         Spacer(modifier = Modifier.height(16.dp))
         sampleUsers.forEach { user ->
             Card(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                onClick = { navController.navigate("chat/${user.name}") }
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                onClick = {
+                    navController.navigate("chat/${user.name}")
+                }
             ) {
-                Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(user.name)
                     Text("💬")
                 }
@@ -356,17 +525,23 @@ fun MatchesScreen(navController: NavController) {
 // -------------------- CHAT --------------------
 @Composable
 fun ChatScreen(userName: String) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
         Text("Chat with $userName", fontSize = 24.sp)
         Spacer(modifier = Modifier.height(16.dp))
         Text("This is where messages will appear.")
     }
 }
 
-// -------------------- PROFILE --------------------
 @Composable
 fun ProfileScreen() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
         Text("User Profile Page")
     }
 }

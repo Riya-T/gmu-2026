@@ -45,6 +45,8 @@ import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.tasks.Task
 import kotlinx.coroutines.launch
 
+// ----------------------------------------------------
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,16 +62,33 @@ class MainActivity : ComponentActivity() {
                     navController = rootNavController,
                     startDestination = "login"
                 ) {
+
+                    // ---------- LOGIN ----------
                     composable("login") {
-                        LoginScreen(onLoginClick = { rootNavController.navigate("onboarding") })
-                    }
-                    composable("onboarding") {
-                        OnboardingScreen(onContinueClick = {
-                            rootNavController.navigate("main") {
-                                popUpTo("login") { inclusive = true }
+                        LoginScreen(
+                            onExistingUser = {
+                                rootNavController.navigate("main") {
+                                    popUpTo("login") { inclusive = true }
+                                }
+                            },
+                            onNewUser = {
+                                rootNavController.navigate("onboarding")
                             }
-                        })
+                        )
                     }
+
+                    // ---------- ONBOARDING ----------
+                    composable("onboarding") {
+                        OnboardingScreen(
+                            onContinueClick = {
+                                rootNavController.navigate("main") {
+                                    popUpTo("login") { inclusive = true }
+                                }
+                            }
+                        )
+                    }
+
+                    // ---------- MAIN ----------
                     composable("main") {
                         MainAppScreen(manager)
                     }
@@ -79,8 +98,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// -------------------- DATA --------------------
+// ----------------------------------------------------
+// DATA
+// ----------------------------------------------------
+
 data class UserProfile(val name: String, val major: String, val year: String)
+
 val sampleUsers = mutableStateListOf(
     UserProfile("Aarav", "CS", "Junior"),
     UserProfile("Maya", "Biology", "Sophomore"),
@@ -88,77 +111,92 @@ val sampleUsers = mutableStateListOf(
     UserProfile("Zara", "Engineering", "Freshman")
 )
 
-// -------------------- LOGIN SCREEN --------------------
+// ----------------------------------------------------
+// LOGIN SCREEN
+// ----------------------------------------------------
+
 @Composable
-fun LoginScreen(onLoginClick: () -> Unit) {
+fun LoginScreen(
+    onExistingUser: () -> Unit,
+    onNewUser: () -> Unit
+) {
     val context = LocalContext.current
     val authRepository = remember { AuthRepository() }
+
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var loginError by remember { mutableStateOf<String?>(null) }
 
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val task: Task<com.google.android.gms.auth.api.signin.GoogleSignInAccount> =
-            GoogleSignIn.getSignedInAccountFromIntent(result.data)
-        try {
-            val account = task.getResult(ApiException::class.java)
-            val email = account?.email
-            val idToken = account?.idToken
+    // ---------- GOOGLE RESULT ----------
+    val googleLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
 
-            if (email == null || !email.trim().lowercase().endsWith(".edu")) {
-                loginError = "Only .edu emails are allowed"
-                return@rememberLauncherForActivityResult
-            }
+            val task: Task<com.google.android.gms.auth.api.signin.GoogleSignInAccount> =
+                GoogleSignIn.getSignedInAccountFromIntent(result.data)
 
-            if (idToken != null) {
-                authRepository.signInWithGoogle(idToken) { success, error ->
-                    if (success) onLoginClick()
-                    else loginError = error ?: "Google sign-in failed"
+            try {
+                val account = task.getResult(ApiException::class.java)
+                val email = account?.email
+                val idToken = account?.idToken
+
+                if (email == null || !email.endsWith(".edu")) {
+                    loginError = "Only .edu emails allowed"
+                    return@rememberLauncherForActivityResult
                 }
-            } else loginError = "Google sign-in failed"
 
-        } catch (e: ApiException) {
-            loginError = e.message ?: "Google sign-in failed"
+                if (idToken != null) {
+                    authRepository.signInWithGoogle(idToken) { success, error ->
+                        if (success) {
+                            authRepository.checkIfProfileComplete { completed ->
+                                if (completed) onExistingUser()
+                                else onNewUser()
+                            }
+                        } else loginError = error
+                    }
+                }
+            } catch (e: Exception) {
+                loginError = e.message
+            }
         }
-    }
 
     val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
         .requestIdToken(context.getString(R.string.default_web_client_id))
         .requestEmail()
         .build()
-    val googleSignInClient = GoogleSignIn.getClient(context, gso)
 
+    val googleClient = GoogleSignIn.getClient(context, gso)
+
+    // ---------- UI ----------
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(Color(0xFFFDE2E4), Color(0xFFFFF1E6))))
     ) {
-        Box(modifier = Modifier.fillMaxSize().alpha(0.08f)) {}
+
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
             Text("StudyBuddy", fontSize = 32.sp, color = Color(0xFFB23A48))
-            Spacer(modifier = Modifier.height(8.dp))
-            Text("Find your academic soulmate", fontSize = 14.sp, color = Color.Gray)
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp)
             ) {
-                Column(modifier = Modifier.padding(24.dp)) {
+                Column(Modifier.padding(24.dp)) {
+
                     OutlinedTextField(
                         value = email,
                         onValueChange = { email = it },
                         label = { Text("Student Email") },
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Spacer(Modifier.height(16.dp))
+
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
@@ -167,36 +205,38 @@ fun LoginScreen(onLoginClick: () -> Unit) {
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Spacer(Modifier.height(24.dp))
+
                     Button(
-                        onClick = {
-                            if (!email.trim().lowercase().endsWith(".edu")) {
-                                loginError = "Only .edu emails are allowed"
-                                return@Button
-                            }
-                            authRepository.login(email, password) { success, error ->
-                                if (success) onLoginClick()
-                                else loginError = error ?: "Login failed"
-                            }
-                        },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp)
+                        onClick = {
+                            authRepository.login(email, password) { success, error ->
+                                if (success) {
+                                    authRepository.checkIfProfileComplete { completed ->
+                                        if (completed) onExistingUser()
+                                        else onNewUser()
+                                    }
+                                } else loginError = error
+                            }
+                        }
                     ) {
                         Text("Sign In")
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Spacer(Modifier.height(12.dp))
+
                     OutlinedButton(
-                        onClick = {
-                            val signInIntent: Intent = googleSignInClient.signInIntent
-                            googleSignInLauncher.launch(signInIntent)
-                        },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp)
+                        onClick = {
+                            googleLauncher.launch(googleClient.signInIntent)
+                        }
                     ) {
-                        Text("Sign In with Google")
+                        Text("Sign In With Google")
                     }
+
                     loginError?.let {
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(Modifier.height(12.dp))
                         Text(it, color = Color.Red)
                     }
                 }
@@ -205,54 +245,53 @@ fun LoginScreen(onLoginClick: () -> Unit) {
     }
 }
 
-// -------------------- ONBOARDING --------------------
+// ----------------------------------------------------
+// ONBOARDING
+// ----------------------------------------------------
+
 @Composable
 fun OnboardingScreen(onContinueClick: () -> Unit) {
+
+    val authRepository = remember { AuthRepository() }
+
     var name by remember { mutableStateOf("") }
     var major by remember { mutableStateOf("") }
-    var classes by remember { mutableStateOf("") }
     var bio by remember { mutableStateOf("") }
+    var year by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
+
         Text("Create Your Profile", fontSize = 28.sp)
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(Modifier.height(24.dp))
+
+        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
+        OutlinedTextField(value = major, onValueChange = { major = it }, label = { Text("Major") })
         OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Name") },
+            value = year,
+            onValueChange = { year = it },
+            label = { Text("Year (Freshman, Sophomore, Junior, Senior)") },
             modifier = Modifier.fillMaxWidth()
         )
-        Spacer(modifier = Modifier.height(16.dp))
-        OutlinedTextField(
-            value = major,
-            onValueChange = { major = it },
-            label = { Text("Major") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        OutlinedTextField(
-            value = classes,
-            onValueChange = { classes = it },
-            label = { Text("Classes (comma separated)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        OutlinedTextField(
-            value = bio,
-            onValueChange = { bio = it },
-            label = { Text("Short Bio") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(24.dp))
+        OutlinedTextField(value = bio, onValueChange = { bio = it }, label = { Text("Bio") })
+
+        Spacer(Modifier.height(24.dp))
+
         Button(
-            onClick = onContinueClick,
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Continue") }
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                authRepository.saveUserProfile(name, major,year, bio) {
+                    onContinueClick()
+                }
+            }
+        ) {
+            Text("Continue")
+        }
     }
 }
+
 
 // -------------------- SWIPE --------------------
 @Composable

@@ -11,6 +11,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -327,7 +330,9 @@ fun MainAppScreen(calendarManager: CalendarManager) {
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = Color.White
+            ) {
                 NavigationBarItem(
                     selected = currentRoute == "swipe_tab",
                     onClick = { navController.navigate("swipe_tab") },
@@ -347,6 +352,13 @@ fun MainAppScreen(calendarManager: CalendarManager) {
                     label = { Text("Calendar") }
                 )
                 NavigationBarItem(
+                    selected = currentRoute == "chatbot_tab",
+                    onClick = { navController.navigate("chatbot_tab") },
+                    icon = { Text("🤖", fontSize = 20.sp) },
+                    label = { Text("AI Buddy") }
+                )
+
+                NavigationBarItem(
                     selected = currentRoute == "profile_tab",
                     onClick = { navController.navigate("profile_tab") },
                     icon = { Text("👤", fontSize = 20.sp) },
@@ -362,6 +374,8 @@ fun MainAppScreen(calendarManager: CalendarManager) {
         ) {
             composable("swipe_tab") { SwipeScreen() }
             composable("matches_tab") { MatchesScreen(navController) }
+            composable("profile_tab") { ProfileScreen() }
+            composable("chatbot_tab") { ChatbotScreen() }
             composable("calendar_tab") {
                 val viewModel: CalendarViewModel = viewModel(
                     factory = object : androidx.lifecycle.ViewModelProvider.Factory {
@@ -410,9 +424,7 @@ fun MatchesScreen(navController: NavController) {
 // -------------------- CHAT --------------------
 @Composable
 fun ChatScreen(userName: String) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Chat with $userName", fontSize = 24.sp)
         Spacer(modifier = Modifier.height(16.dp))
         Text("This is where messages will appear.")
@@ -420,6 +432,129 @@ fun ChatScreen(userName: String) {
 }
 
 @Composable
+fun ProfileScreen() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text("User Profile Page")
+    }
+}
+
+// --- NEW BOT-LIKE CHAT UI ---
+
+data class ChatMessage(val text: String, val isUser: Boolean)
+
+@Composable
+fun ChatbotScreen() {
+    var input by remember { mutableStateOf("") }
+    val messages = remember { mutableStateListOf(ChatMessage("Hi! I'm your StudyBuddy AI. Ask me anything about your classes or major!", false)) }
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFF9F9F9))
+            .padding(16.dp)
+    ) {
+        Text(
+            text = "AI Study Assistant",
+            fontSize = 20.sp,
+            color = Color(0xFFB23A48),
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(messages) { msg ->
+                ChatBubble(msg)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Type a message...") },
+                shape = RoundedCornerShape(24.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFFB23A48),
+                    unfocusedBorderColor = Color.LightGray
+                )
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Button(
+                onClick = {
+                    if (input.isNotBlank()) {
+                        val userText = input
+                        messages.add(ChatMessage(userText, true))
+                        input = ""
+                        
+                        scope.launch {
+                            listState.animateScrollToItem(messages.size - 1)
+                            
+                            try {
+                                val response = RetrofitClient.api.sendMessage(
+                                    ChatRequest(message = userText, context = "General Study Help")
+                                )
+                                if (response.isSuccessful) {
+                                    val reply = response.body()?.reply ?: "I'm thinking..."
+                                    messages.add(ChatMessage(reply, false))
+                                } else {
+                                    messages.add(ChatMessage("Sorry, my brain is a bit foggy (Error ${response.code()})", false))
+                                }
+                            } catch (e: Exception) {
+                                messages.add(ChatMessage("Can't connect to server. Make sure your Node.js backend is running!", false))
+                            }
+                            listState.animateScrollToItem(messages.size - 1)
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(50),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB23A48)),
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.size(50.dp)
+            ) {
+                Text("🚀")
+            }
+        }
+    }
+}
+
+@Composable
+fun ChatBubble(message: ChatMessage) {
+    val alignment = if (message.isUser) Alignment.End else Alignment.Start
+    val bgColor = if (message.isUser) Color(0xFFB23A48) else Color(0xFFE9E9EB)
+    val textColor = if (message.isUser) Color.White else Color.Black
+    val shape = if (message.isUser) {
+        RoundedCornerShape(16.dp, 16.dp, 0.dp, 16.dp)
+    } else {
+        RoundedCornerShape(16.dp, 16.dp, 16.dp, 0.dp)
+    }
+
+    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
+        Surface(
+            color = bgColor,
+            shape = shape,
+            modifier = Modifier.widthIn(max = 280.dp)
+        ) {
+            Text(
+                text = message.text,
+                modifier = Modifier.padding(12.dp),
+                color = textColor,
+                fontSize = 15.sp
+            )
+        }
+    }
 fun ProfileScreen() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text("User Profile Page")

@@ -555,8 +555,10 @@ fun ChatBubble(message: ChatMessage) {
             )
         }
     }
-fun ProfileScreen() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("User Profile Page")
+    @Composable
+    fun ProfileScreen() {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("User Profile Page")
+        }
     }
 }

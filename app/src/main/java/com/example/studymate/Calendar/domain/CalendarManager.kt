@@ -21,6 +21,10 @@ class CalendarManager(
         return repository.getRange(start.toString(), end.toString())
     }
 
+    suspend fun loadRange(start: String, end: String): List<Task> {
+        return repository.getRange(start, end)
+    }
+
     suspend fun addTask(task: Task) {
         repository.addTask(task)
     }

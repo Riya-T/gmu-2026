@@ -7,8 +7,10 @@ import androidx.lifecycle.viewModelScope
 import com.example.studymate.Calendar.data.model.Task
 import com.example.studymate.Calendar.domain.CalendarManager
 import kotlinx.coroutines.launch
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.temporal.TemporalAdjusters
 
 enum class CalendarViewType {
     MONTHLY, WEEKLY, DAILY
@@ -28,7 +30,11 @@ class CalendarViewModel(
     val selectedDate: LiveData<LocalDate> = _selectedDate
 
     private var currentMonth = YearMonth.now()
-    private var currentWeekDate = LocalDate.now()
+    private var currentWeekDate = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
+
+    init {
+        loadData()
+    }
 
     fun setViewType(type: CalendarViewType) {
         _viewType.value = type
@@ -37,7 +43,7 @@ class CalendarViewModel(
 
     fun setSelectedDate(date: LocalDate) {
         _selectedDate.value = date
-        currentWeekDate = date
+        currentWeekDate = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
         currentMonth = YearMonth.from(date)
         loadData()
     }
@@ -62,14 +68,17 @@ class CalendarViewModel(
 
     private fun loadWeek() {
         viewModelScope.launch {
-            _tasks.value = manager.loadWeek(currentWeekDate)
+            // Load tasks for the full week
+            val start = currentWeekDate
+            val end = start.plusDays(6)
+            _tasks.value = manager.loadRange(start.toString(), end.toString())
         }
     }
 
     private fun loadDay() {
         viewModelScope.launch {
             _selectedDate.value?.let { date ->
-                _tasks.value = manager.loadWeek(date).filter { it.start.startsWith(date.toString()) }
+                _tasks.value = manager.loadRange(date.toString(), date.toString())
             }
         }
     }
